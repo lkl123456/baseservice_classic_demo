@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:util="http://www.springframework.org/schema/util" xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+       http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+	<!-- Shiro无状态Web应用集成 
+		Web应用无状态，即服务器端无状态，就是说服务器端不会存储会话，如：session，而是每次请求时带上相应的用户名进行登录。如一些REST风格的API，
+		如果不使用OAuth2协议，就可以使用如REST+HMAC认证进行访问。HMAC（Hash-based Message Authentication Code）：基于散列的消息认证码，
+		使用一个密钥和一个消息作为输入，生成它们的消息摘要。注意该密钥只有客户端和服务端知道，其他第三方是不知道的。
+		访问时使用该消息摘要进行传播，服务端然后对该消息摘要进行验证。如果只传递用户名+密码的消息摘要，一旦被别人捕获可能会重复使用该摘要进行认证。
+		解决办法如： 
+		1、每次客户端申请一个Token，然后使用该Token进行加密，而该Token是一次性的，即只能用一次；类似于OAuth2的Token机制（本示例）； 
+		2、客户端每次生成一个唯一的Token，然后使用该Token加密，这样服务器端记录下这些Token，如果之前用过就认为是非法请求。
+		服务器端 :服务器端，不生成会话，而是每次请求时带上用户身份进行认证。
+	-->
+	<!-- 自定义Realm-->
+	<bean id="statelessRealm" class="com.yonyou.iuap.auth.shiro.StatelessRealm">
+		<property name="cachingEnabled" value="false" />
+	</bean>
+	
+	<!-- 自定义Realm-->
+	<bean id="defineShiroDbRealm" class="com.yonyou.uap.ieop.security.realm.DefineShiroDbRealm"/>
+
+	<!-- 自定义Subject工厂 （这里禁用了session）-->
+	<bean id="subjectFactory"
+		class="com.yonyou.iuap.auth.shiro.StatelessDefaultSubjectFactory" />
+		
+	<bean id="webTokenProcessor" class="com.yonyou.iuap.auth.token.DefaultTokenPorcessor">
+		<property name="id" value="web"></property>
+		<!-- 
+		<property name="domain" value="www.yonyou.com"></property> 
+		-->
+		<property name="path" value="/"></property>
+		<property name="expr" value="${sessionTimeout}"></property>
+		<property name="exacts">
+			<list>
+				<value type="java.lang.String">tenantid</value>
+				<value type="java.lang.String">userId</value>
+				<value type="java.lang.String">userType</value>
+				<value type="java.lang.String">typeAlias</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="maTokenProcessor" class="com.yonyou.iuap.auth.token.DefaultTokenPorcessor">
+		<property name="id" value="ma"></property>
+		<!-- 
+		<property name="domain" value="www.yonyou.com"></property> 
+		-->
+		<property name="path" value="/"></property>
+		<property name="expr" value="-1"></property>
+		<property name="exacts">
+			<list>
+				<value type="java.lang.String">tenantid</value>
+				<value type="java.lang.String">userId</value>
+				<value type="java.lang.String">userType</value>
+				<value type="java.lang.String">typeAlias</value>
+			</list>
+		</property>
+	</bean>
+
+	<bean id="tokenFactory" class="com.yonyou.iuap.auth.token.TokenFactory">
+		<property name="processors">
+			<list>
+				<ref bean="webTokenProcessor" />
+				<ref bean="maTokenProcessor" />
+			</list>
+		</property>
+	</bean>
+ 
+
+	<!-- 会话管理器 （这里禁用了session存储）-->
+	<bean id="sessionManager" class="org.apache.shiro.session.mgt.DefaultSessionManager">
+		<property name="sessionValidationSchedulerEnabled" value="false" />
+	</bean>
+
+	<!-- 安全管理器 -->
+	<bean id="securityManager" class="org.apache.shiro.web.mgt.DefaultWebSecurityManager">
+		<!-- 传入自定义Realm -->
+		<property name="realms">
+			<list>
+				<ref bean="statelessRealm" />
+				<ref bean="defineShiroDbRealm" />
+			</list>
+		</property>
+		<!-- 无状态shiro认证组件(禁用默认session) -->
+		<property name="subjectDAO.sessionStorageEvaluator.sessionStorageEnabled"
+			value="false" />
+		<property name="subjectFactory" ref="subjectFactory" />
+		<property name="sessionManager" ref="sessionManager" />
+	</bean>
+
+	<!-- 相当于调用SecurityUtils.setSecurityManager(securityManager) -->
+	<bean
+		class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+		<property name="staticMethod"
+			value="org.apache.shiro.SecurityUtils.setSecurityManager" />
+		<property name="arguments" ref="securityManager" />
+	</bean>
+	<!--自定义无状态认证过滤器 -->
+	<bean id="statelessAuthcFilter" class="com.yonyou.iuap.auth.shiro.StatelessAuthcFilter">
+		<property name="sysid" value="${sysid}" />
+		<property name="tokenFactory" ref="tokenFactory" />
+		<property name="loginUrl" value="${loginUrl}" />
+	</bean>
+	<!--自定义认证过滤器 -->
+	<bean id="signAuthFilter" class="com.yonyou.iuap.generic.filter.ExtSignAuthFilter">
+		<!-- <property name="prefix" value="${context.name}" /> -->
+		<!--<property name="authFilePath" value="${authfile.path}"/>-->
+	</bean>
+
+	<bean id="logout" class="com.yonyou.iuap.auth.shiro.LogoutFilter"></bean>
+
+	<!-- Shiro的Web过滤器 -->
+	<bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+		<!-- Shiro的核心安全接口,这个属性是必须的 -->  
+		<property name="securityManager" ref="securityManager" />
+		<!-- 身份认证失败，则跳转到登录页面的配置 -->  
+		<property name="loginUrl" value="/login" />
+		<!-- 身份认证失败，则跳转到登录页面的配置 --> 
+		<property name="successUrl" value="/" />
+		<!-- 自定义shiro 的 Filter 每种filter都对应了不同的权限拦截规则 -->
+		<property name="filters">
+			<util:map>
+				<entry key="statelessAuthc" value-ref="statelessAuthcFilter" />
+				<entry key="signAuth" value-ref="signAuthFilter" />
+			</util:map>
+		</property>
+		<!-- Shiro连接约束配置,即Filter过滤器链的定义 --> 
+		<property name="filterChainDefinitions">
+			<value>
+				/logout = logout
+				/**/static/** = anon
+				/**/css/** = anon
+				/**/images/** = anon
+				/**/trd/** = anon
+				/**/js/** = anon
+				/**/api/** = anon
+				/**/cxf/** = anon
+				/**/jaxrs/** = anon
+				/**/restWithSign/** = signAuth
+				/** = statelessAuthc
+			</value>
+		</property>
+	</bean>
+
+	<!-- Shiro生命周期处理器 -->
+	<bean id="lifecycleBeanPostProcessor" class="org.apache.shiro.spring.LifecycleBeanPostProcessor" />
+
+	<bean id="sessionJedisPool" class="com.yonyou.iuap.cache.redis.RedisPoolFactory" scope="prototype" factory-method="createJedisPool">
+		<constructor-arg value="${redis.session.url}" />
+	</bean>
+    
+    <bean id="sessionMgr" class="com.yonyou.iuap.auth.session.SessionManager">
+        <property name="sessionJedisPool" ref="sessionJedisPool"/>
+        <property name="sessionMutex" value="${sessionMutex}"/>
+    </bean>	
+</beans>
