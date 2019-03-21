@@ -9,6 +9,6 @@ import com.yonyou.cloud.middleware.AppStarter;
  */
 public class App {
     public static void main(String[] args) throws Exception {
-        AppStarter.run(App.class,8180);
+        AppStarter.run(App.class,8780);
     }
 }
